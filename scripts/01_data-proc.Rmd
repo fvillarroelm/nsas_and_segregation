@@ -1,0 +1,415 @@
+---
+title: "h"
+author: "Francisco Villarroel"
+date: "11/10/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, data.table, janitor, here) 
+```
+```{r sae-oferta, eval = FALSE, include = FALSE}
+# load data
+files <- list.files(here("data", "raw"), pattern = "oferta", full.names = T)
+sae_oferta <- map(files, fread) %>% 
+              map2(.y = 1:4,
+                   .f = ~{.x %>% mutate(agno = 2016 + .y)}
+                   )
+# standardize vars
+sae_oferta[[1]] <- sae_oferta[[1]] %>% rename("cod_nivel" = "nivel") %>% 
+                                       mutate("cod_curso" = NA)
+
+# filter 9th grade and relevant vars
+sae_oferta <-
+sae_oferta %>% map(.f = ~{.x %>% filter(cod_nivel == 9) %>%
+                                 select(agno, rbd, cod_nivel,
+                                        cod_curso, con_copago,
+                                        cupos_totales, vacantes)})
+                                 
+```
+
+
+```{r sae-postulantes, eval=FALSE, include=FALSE}
+# load data
+files <- list.files(here("data", "raw"), pattern = "postulantes", full.names = T)
+sae_postulantes <- map(files, fread) %>% 
+                   map2(.y = 1:4,
+                        .f = ~{.x %>% mutate(agno = 2016 + .y)}
+                        )
+# standardize vars
+sae_postulantes[[1]] <- sae_postulantes[[1]] %>% rename("cod_nivel" = "nivel")
+
+# filter 9th grade and relevant vars
+sae_postulantes <-
+sae_postulantes %>% map(.f = ~{.x %>% filter(cod_nivel == 9) %>%
+                                      select(agno, mrun, prioritario, cod_nivel)})
+```
+
+
+```{r SAE, eval=FALSE, include=FALSE}
+###############################postulaciones#############################################################
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda_entrega/bbdd_sae")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda_entrega/bbdd_sae", pattern="postulaciones_")
+postulaciones=map(files, fread)
+
+postulaciones[[1]]=postulaciones[[1]]%>%rename("cod_nivel"="nivel")%>%mutate("cod_curso"=NA)
+postulaciones=postulaciones%>%map(~filter(.x, cod_nivel==9))
+for(i in 1:4){
+postulaciones[[i]]=postulaciones[[i]]%>%mutate("agno"=2016+i)
+}
+
+postulaciones=map(postulaciones,~select(.x,agno,mrun,preferencia_postulante,rbd,cod_nivel, cod_curso))
+
+#######################Merge##############################
+
+sae_panel=map2(postulaciones,postulantes,left_join, by="mrun")%>%map(~select(.x,-c(agno.y,cod_nivel.y)))
+sae_panel=map2(sae_panel,oferta,left_join, by=c("rbd", "cod_curso"))%>%map(~select(.x,-c(agno.x,cod_nivel.x)))
+saveRDS(sae_panel,"sae_panel.RData")
+```
+```{r, eval=FALSE, echo=FALSE}
+############MATRICULA#################
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda_entrega/bbdd_matricula")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segundaentrega/bbdd_matricula", pattern="matricula_")
+temp <- map(files, ~fread(.))
+
+names(temp[[4]])=toupper(names(temp[[4]]))
+names(temp[[5]])=toupper(names(temp[[5]]))
+temp[[4]]=temp[[4]]%>%rename("AGNO"="Ï..AGNO")
+temp[[6]]=temp[[6]]%>%rename("AGNO"="ï..AGNO")
+
+matricula=map(temp, ~filter(.x,COD_GRADO == 1 & COD_ENSE %in% seq(310,910,100)))
+
+matricula_panel=readRDS("matricula_panel.RData")
+matricula_panel[[7]]=matricula_panel[[7]]%>%rename("AGNO"="ï..AGNO")
+saveRDS(matricula_panel,file="matricula_panel.RData")
+
+#Matrícula 2017. % colegios completos (básica y media) por tipo de dependencia.
+#prueba%>%filter(cod_ense %in% seq(110,910,100))%>%distinct(rbd,cod_grado, cod_ense, .keep_all=T)%>%group_by(rbd)%>%add_tally()%>%arrange(rbd)%>%ungroup()%>%distinct(rbd,.keep_all=T)%>%mutate(es_completo=ifelse(n<12,0,1))%>%group_by(cod_depe2)%>%summarise(media_grado=mean(es_completo)*100)
+```
+```{r, eval=FALSE, echo=FALSE}
+##########ALU SEP##################
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_sep_alu_1")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_sep_alu_1", pattern="sep_")
+sep_alu_1=map(files,~fread(.))
+sep_alu_1=map(sep_alu_1,~filter(.x,COD_GRADO == 1 & (COD_ENSE %in% seq(310,910,100))))
+
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_sep_alu_2")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_sep_alu_2", pattern="sep_")
+sep_alu_2=map(files,~fread(.))
+sep_alu_2=map(sep_alu_2,~filter(.x,COD_GRADO == 1 & COD_ENSE %in% seq(310,910,100)))
+
+sep_alu=c(sep_alu_1, sep_alu_2)
+
+for(i in 1:2){
+sep_alu[[i]]=sep_alu[[i]]%>%
+  mutate("CONVENIO_SEP"=NA,
+         "AÃ‘O_INGRESO_SEP"=NA,
+         "EE_GRATUITO"=NA,
+         "PRIORITARIO_ALU"=BEN_SEP,
+         "PREFERENTE_ALU"=NA)
+}
+sep_alu[[3]]=sep_alu[[3]]%>%
+  mutate("EE_GRATUITO"=NA,
+         "PRIORITARIO_ALU"=BEN_SEP,
+         "PREFERENTE_ALU"=NA)
+
+sep_alu=map(sep_alu,~rename(.x,"ANO_INGRESO_SEP"="AÃ‘O_INGRESO_SEP"))
+
+saveRDS(sep_alu,file="sep_alu_I_panel.RData")
+```
+```{r, eval=FALSE, echo=FALSE}
+#############FICOM###########
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_ficom")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_ficom", pattern="ficom")
+ficom=map(files, ~read_excel(path=.x,skip=5))
+ficom=map(ficom,~rename(.x,"RBD"="rbd"))
+ficom[[2]]=ficom[[2]]%>%rename("cobropromedio"="cobro_promedio")
+saveRDS(ficom,file="ficom_panel.RData")
+```
+```{r, eval=FALSE, echo=FALSE}
+#####SEP RBD######
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_sep_rbd")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_sep_rbd", pattern="SEP_")
+sep_rbd=map(files, read.csv, sep=";")
+
+for (i in 1:6){
+sep_rbd[[i]]=sep_rbd[[i]]%>%rename("RBD"="ï..RBD")%>%mutate("ï..AGNO"=2007+i)
+}
+
+for(i in 1:7){
+sep_rbd[[i]]=sep_rbd[[i]]%>%
+  mutate("CONVENIO_SEP"=NA,
+         "AÃ.O_INGRESO_SEP"=NA,
+         "EE_GRATUITO"=NA,
+         "N_PRIO_BEN"=NA,
+         "N_PREF"=NA,
+         "N_PREF_BEN"=NA)
+}
+sep_rbd[[8]]=sep_rbd[[8]]%>%
+  mutate("EE_GRATUITO"=NA,
+         "N_PRIO_BEN"=NA,
+         "N_PREF"=NA,
+         "N_PREF_BEN"=NA)
+
+sep_rbd=map(sep_rbd,~rename(.x,"ANO_INGRESO_SEP"="AÃ.O_INGRESO_SEP","AGNO"="ï..AGNO"))
+sep_rbd=map(sep_rbd,~filter(.x,RURAL_RBD==0))
+
+rbd=bind_rows(sep_rbd, .id="column.label")%>%select(-column.label)
+#Creación variables sep y otras que son a nivel de colegio (número colegios/comuna)
+rbd=rbd%>%mutate("est_sep"=ifelse(CLASIFICACION_SEP!=" ", 1,0))%>%
+  group_by(RBD)%>%
+  mutate("anos_sep"=cumsum(est_sep))%>%
+  ungroup()%>%
+  filter(AGNO>2012)
+sep_rbd=split(rbd,as.factor(rbd$AGNO))
+
+saveRDS(sep_rbd,file="sep_rbd_panel.RData")
+```
+```{r, eval=FALSE, echo=FALSE}
+####PARTE 1 UNIÓN SIMCE####
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda_entrega/bbdd_simce/pt1")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda_entrega/bbdd_simce/pt1", pattern="alu_")
+alu=map(files, read_dta)
+alu=map(alu,~select(.x,mrun,idalumno))
+
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda_entrega/bbdd_simce/pt1")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda_entrega/bbdd_simce/pt1", pattern="cpad_")
+cpad=map(files, fread)
+cpad=map(cpad,~select(.x,padre,madre, ingresos, idalumno))
+
+merge_cpad_alu=map2(alu,cpad,merge,by="idalumno")%>%map(~rename(.x,"MRUN"="mrun"))
+
+merge_cpad_alu=merge_cpad_alu[c(1,4,5,6,2,7,3)]
+
+merge_cpad_alu=merge_cpad_alu%>%
+  map(~filter(.x,ingresos<=15 & ingresos>=1))%>%
+  map(~mutate(.x,ingresos=recode(ingresos,
+                                                                                         "1"=50000,
+                                                                                         "2"=150000,
+                                                                                         "3"=250000,
+                                                                                         "4"=350000,
+                                                                                         "5"=450000,
+                                                                                         "6"=550000,
+                                                                                         "7"=700000,
+                                                                                         "8"=900000,
+                                                                                         "9"=1100000,
+                                                                                         "10"=1300000,
+                                                                                         "11"=1500000,
+                                                                                         "12"=1700000,
+                                                                                         "13"=1900000,
+                                                                                         "14"=2100000,
+                                                                                         "15"=3000000)))%>%
+  map(~filter(.x,padre!="99" & padre!="0" & padre!="21"))%>%
+  map(~mutate(.x,padre=padre-1))%>%
+  map(~mutate(.x,padre=recode(padre,
+                                                                                        "0"=0,
+                                                                                         "1"=1,
+                                                                                         "2"=2,
+                                                                                         "3"=3,
+                                                                                         "4"=4,
+                                                                                         "5"=5,
+                                                                                         "6"=6,
+                                                                                         "7"=7,
+                                                                                         "8"=8,
+                                                                                         "9"=9,
+                                                                                         "10"=10,
+                                                                                         "11"=11,
+                                                                                         "12"=12,
+                                                                                         "13"=12,
+                                                                                         "14"=13,
+                                                                                         "15"=14,
+                                                                                         "16"=14.5,
+                                                                                         "17"=16,
+                                                                                         "18"=18,
+                                                                                         "19"=22)))%>%
+  map(~filter(.x,madre!="99" & madre!="0" & madre!="21"))%>%
+   map(~mutate(.x,madre=madre-1))%>%
+  map(~mutate(.x,madre=recode(madre,
+                                                                                        "0"=0,
+                                                                                         "1"=1,
+                                                                                         "2"=2,
+                                                                                         "3"=3,
+                                                                                         "4"=4,
+                                                                                         "5"=5,
+                                                                                         "6"=6,
+                                                                                         "7"=7,
+                                                                                         "8"=8,
+                                                                                         "9"=9,
+                                                                                         "10"=10,
+                                                                                         "11"=11,
+                                                                                         "12"=12,
+                                                                                         "13"=12,
+                                                                                         "14"=13,
+                                                                                         "15"=14,
+                                                                                         "16"=14.5,
+                                                                                         "17"=16,
+                                                                                         "18"=18,
+                                                                                         "19"=22)))
+
+saveRDS(merge_cpad_alu,"simce_panel_pt1.RData")
+#data_1=bind_rows(data, .id="column.label")
+```
+```{r}
+##########PARTE 2 UNIÓN SIMCE##############
+
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_simce/pt2")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_simce/pt2", pattern="alu")
+alu=map(files, read_dta)
+alu=map(alu,~select(.x,mrun,idalumno))
+alu=map(alu, ~rename(.x,idalumno_pt2=idalumno))
+
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_simce/pt2")
+files=list.files(path="C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda entrega/bbdd_simce/pt2", pattern="cpad_")
+cpad=map(files, fread)
+#names(cpad)=c("simce2m2015", "simce2m2016","simce2m2017","simce4b2008", "simce4b2014", "simce6b2014", "simce6b2015")
+#map2(.x=names(cpad), .y=cpad,~write_csv(.y,path=paste0("cpad_",.x,".csv")))
+for(i in 5:6){
+cpad[[i]]=cpad[[i]]%>%select(-c(cpad_p08,cpad_p10))%>%mutate("cpad_p07"=cpad_p04,"cpad_p08"=cpad_p05,"cpad_p10"=cpad_p06)
+}
+cpad[[3]]=cpad[[3]]%>%rename(cpad_p07=cpad_p06, cpad_p08=cpad_p07)
+
+#educ padre en simce_4b_2008
+aux=as.data.frame(cpad[[4]])[,grep(pattern="cpad_p05_[0-9]*",x=colnames(as.data.frame(cpad[[4]])))] #db te entrega la posición de las filas que cumplen con tu condición
+aux1=apply(aux,1,which.max)
+cpad[[4]]=cpad[[4]]%>%mutate("cpad_p07"=aux1-1)
+
+#educ madre en simce_4b_2008
+aux=as.data.frame(cpad[[4]])[,grep(pattern="cpad_p06_[0-9]*",x=colnames(as.data.frame(cpad[[4]])))] #db te entrega la posición de las filas que cumplen con tu condición
+aux1=apply(aux,1,which.max) #esto te entrega la posición del número máximo para CADA observación (es decir, en qué posición de las filas antes mencionadas está el 1)
+cpad[[4]]=cpad[[4]]%>%mutate("cpad_p08"=aux1-1)
+
+#ingresos en simce_4b_2008
+aux=as.data.frame(cpad[[4]])[,grep(pattern="cpad_p07_[0-9]*",x=colnames(as.data.frame(cpad[[4]])))] #db te entrega la posición de las filas que cumplen con tu condición
+aux1=apply(aux,1,which.max) #esto te entrega la posición del número máximo para CADA observación (es decir, en qué posición de las filas antes mencionadas está el 1)
+cpad[[4]]=cpad[[4]]%>%mutate("cpad_p10"=aux1)
+
+
+cpad=map(cpad, ~rename(.x,padre_pt2=cpad_p07, madre_pt2=cpad_p08, ingresos_pt2=cpad_p10, idalumno_pt2=idalumno))
+cpad=map(cpad,~select(.x,padre_pt2, madre_pt2, ingresos_pt2, idalumno_pt2))
+
+cpad[[5]]=cpad[[5]]%>%mutate("padre_pt2"=padre_pt2+1)
+
+cpad[[6]]=cpad[[6]]%>%mutate("madre_pt2"=madre_pt2+1)
+
+merge_cpad_alu_pt2=map2(alu,cpad,merge,by="idalumno_pt2")%>%map(~rename(.x,"MRUN"="mrun"))
+
+merge_cpad_alu_pt2=merge_cpad_alu_pt2[c(4,1,2,3,6,7,5)]
+
+merge_cpad_alu_pt2=merge_cpad_alu_pt2%>%
+  map(~filter(.x,between(ingresos_pt2,1,15)))%>%
+  map(~mutate(.x,ingresos_pt2=recode(ingresos_pt2,
+                                                                                         "1"=50000,
+                                                                                         "2"=150000,
+                                                                                         "3"=250000,
+                                                                                         "4"=350000,
+                                                                                         "5"=450000,
+                                                                                         "6"=550000,
+                                                                                         "7"=700000,
+                                                                                         "8"=900000,
+                                                                                         "9"=1100000,
+                                                                                         "10"=1300000,
+                                                                                         "11"=1500000,
+                                                                                         "12"=1700000,
+                                                                                         "13"=1900000,
+                                                                                         "14"=2100000,
+                                                                                         "15"=3000000)))%>%
+  map(~filter(.x,between(padre_pt2,1,20)))%>%
+  map(~mutate(.x,padre_pt2=padre_pt2-1))%>%
+  map(~mutate(.x,padre_pt2=recode(padre_pt2,
+                                                                                        "0"=0,
+                                                                                         "1"=1,
+                                                                                         "2"=2,
+                                                                                         "3"=3,
+                                                                                         "4"=4,
+                                                                                         "5"=5,
+                                                                                         "6"=6,
+                                                                                         "7"=7,
+                                                                                         "8"=8,
+                                                                                         "9"=9,
+                                                                                         "10"=10,
+                                                                                         "11"=11,
+                                                                                         "12"=12,
+                                                                                         "13"=12,
+                                                                                         "14"=13,
+                                                                                         "15"=14,
+                                                                                         "16"=14.5,
+                                                                                         "17"=16,
+                                                                                         "18"=18,
+                                                                                         "19"=22)))%>%
+  map(~filter(.x,between(madre_pt2,1,20)))%>%
+   map(~mutate(.x,madre_pt2=madre_pt2-1))%>%
+  map(~mutate(.x,madre_pt2=recode(madre_pt2,
+                                                                                        "0"=0,
+                                                                                         "1"=1,
+                                                                                         "2"=2,
+                                                                                         "3"=3,
+                                                                                         "4"=4,
+                                                                                         "5"=5,
+                                                                                         "6"=6,
+                                                                                         "7"=7,
+                                                                                         "8"=8,
+                                                                                         "9"=9,
+                                                                                         "10"=10,
+                                                                                         "11"=11,
+                                                                                         "12"=12,
+                                                                                         "13"=12,
+                                                                                         "14"=13,
+                                                                                         "15"=14,
+                                                                                         "16"=14.5,
+                                                                                         "17"=16,
+                                                                                         "18"=18,
+                                                                                         "19"=22)))
+saveRDS(merge_cpad_alu_pt2,"simce_panel_pt2.RData")
+```
+```{r, eval=FALSE, include=FALSE}
+##########PANEL COMPLETO############
+setwd("C:/Users/fvillarroel/Downloads/Universidad/12/TESIS/Entregas/segunda_entrega/bbdds_finales")
+matricula_panel=readRDS("matricula_I_panel.RData")
+sep_alu_panel=readRDS("sep_alu_I_panel.RData")
+
+simce_panel_pt1=readRDS("simce_panel_pt1.RData")
+#Problema de duplicados. Los elimino de la muestra.
+#En todos los casos se pierde menos de un 0.7% de las observaciones totales al eliminar las observaciones duplicadas.
+
+vector=1:7
+simce_panel_pt1=map(.x=vector,
+                    .f=~{
+  simce_panel_pt1[[.x]]%>%mutate(dup=ifelse(duplicated(simce_panel_pt1[[.x]]$MRUN)==1 | duplicated(simce_panel_pt1[[.x]]$MRUN, fromLast=TRUE)==1,1,0))%>%filter(dup==0)%>%select(-dup)
+})
+
+simce_panel_pt2=readRDS("simce_panel_pt2.RData")
+#Problema de duplicados. Los elimino de la muestra.
+#En todos los casos se pierde menos de un 0.8% de las observaciones totales al eliminar las observaciones duplicadas.
+
+simce_panel_pt2=map(.x=vector,
+                    .f=~{
+  simce_panel_pt2[[.x]]%>%mutate(dup=ifelse(duplicated(simce_panel_pt2[[.x]]$MRUN)==1 | duplicated(simce_panel_pt2[[.x]]$MRUN, fromLast=TRUE)==1,1,0))%>%filter(dup==0)%>%select(-dup)
+})
+
+ficom=readRDS("ficom_panel.RData")
+sep_rbd=readRDS("sep_rbd_panel.RData")
+
+sep_alu_panel=map(sep_alu_panel,~select(.x,MRUN,EE_GRATUITO,PRIORITARIO_ALU,PREFERENTE_ALU,BEN_SEP))
+#matricula+sep
+matricula_sep_panel=map2(matricula_panel,sep_alu_panel,left_join,by="MRUN")
+#matrícula+sep+simce_pt1
+#Cuántas observaciones se van lo tengo en un excel
+matricula_sep_simce_panel=map2(matricula_sep_panel,simce_panel_pt1,left_join,by=c("MRUN"))
+#matrícula+sep+simce_pt2
+matricula_sep_simce_panel=map2(matricula_sep_simce_panel,simce_panel_pt2,left_join,by=c("MRUN"))
+
+#no salen nunca-> se van de la muestra
+matricula_sep_simce_panel=map(.x=vector,
+    .f=~{matricula_sep_simce_panel[[.x]]%>%mutate_at(.vars=c("padre","padre_pt2","madre","madre_pt2","ingresos","ingresos_pt2"),~replace(.x,is.na(.),999))%>%mutate("nunca"=ifelse((padre==999 | madre==999 | ingresos==999) & (padre_pt2==999 | madre_pt2==999 | ingresos_pt2==999),1,0))%>%filter(nunca!=1)%>%select(-nunca)})
+
+#matrícula+sep+simce+ficom
+ficom=map(ficom,~select(.x,RBD,cobropromedio))
+matricula_sep_simce_ficom_panel=map2(matricula_sep_simce_panel,ficom,left_join,by="RBD")
+#matrícula+alu_sep+simce+ficom+rbd_sep
+sep_rbd=map(sep_rbd,~select(.x,RBD,EE_GRATUITO,N_PRIO_BEN,N_PREF,N_PREF_BEN,N_BEN, est_sep,anos_sep))
+panel_completo=map2(matricula_sep_simce_ficom_panel,sep_rbd,left_join,by="RBD")
+
+saveRDS(panel_completo,"panel_2013-2019_I_completo.RData")
+rm(list=ls())
+```
